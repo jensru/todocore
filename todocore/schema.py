@@ -1,10 +1,10 @@
 """Standalone schema bootstrap for todocore.
 
 ensure_schema(conn) creates every table the CLI needs, idempotently, so a fresh
-standalone DB works without any host application (no index.py, no memory.db).
+standalone DB works without any host application.
 
-Extracted from the agent-os index.py DDL. Kept in sync with the additive
-ALTER-migrations in todo.py._ensure_table (which run afterwards for legacy DBs).
+Kept in sync with the additive ALTER migrations in todo.py._ensure_table (which
+run afterwards for legacy DBs).
 """
 
 import sqlite3

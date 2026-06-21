@@ -1,12 +1,11 @@
-"""Shared DB module — Single Source of Truth for the todocore SQLite database.
+"""Shared DB module: single source of truth for the todocore SQLite database.
 
 All tools import from here:
     from todocore.db import open_db, DB_PATH
 
 The DB path is ENV-configurable. Resolution order:
-    1. TODO_DB_PATH   (canonical)
-    2. LOKI_DB_PATH   (accepted alias, for the Loki consumer)
-    3. ~/.local/share/todocore/todos.db   (default)
+    1. TODO_DB_PATH                        (canonical)
+    2. ~/.local/share/todocore/todos.db    (default)
 
 The parent directory is created on demand.
 """
@@ -19,8 +18,8 @@ _DEFAULT_DB = Path.home() / ".local/share/todocore/todos.db"
 
 
 def _resolve_db_path() -> Path:
-    """TODO_DB_PATH wins; LOKI_DB_PATH is an accepted alias; else the default."""
-    env = os.getenv("TODO_DB_PATH") or os.getenv("LOKI_DB_PATH")
+    """Return TODO_DB_PATH if set, otherwise the default path."""
+    env = os.getenv("TODO_DB_PATH")
     return Path(env) if env else _DEFAULT_DB
 
 

@@ -19,8 +19,8 @@ progress (show displays "children 2/5").
 
 Exposes:
   - Tools:     write + read actions (add/update/done/cancel/... + done_today)
-  - Resources: read-only context (loki://workdays, loki://dashboard,
-               loki://categories; loki://workstreams kept as a legacy alias)
+  - Resources: read-only context (todo://workdays, todo://dashboard,
+               todo://categories; todo://workstreams kept as a legacy alias)
                -- consumed by Claude Code as @-mentions.
   - Prompts:   reusable workflows (plan-day, triage-overdue, pick-next-todo)
                -- surface as slash commands in Claude Code.
@@ -55,13 +55,11 @@ _WEEKDAYS = {
 PYTHON = sys.executable
 CLI_MODULE = "todocore.todo"
 
-# Read-only context sources for resources. ENV overrides; the *_CONFIG/*_PATH
-# defaults are consumer-specific (e.g. Loki) and simply absent in a bare install.
-WORKDAYS_YAML = Path(os.getenv("TODO_WORKDAYS_CONFIG",
-                               os.getenv("LOKI_WORKSTREAMS_CONFIG", "")))
+# Read-only context sources for resources. ENV overrides; these defaults are
+# consumer-specific and simply absent in a bare install.
+WORKDAYS_YAML = Path(os.getenv("TODO_WORKDAYS_CONFIG", ""))
 WORKSTREAMS_YAML = WORKDAYS_YAML  # backward-compat alias
-DASHBOARD_MD = Path(os.getenv("TODO_DASHBOARD_PATH",
-                              os.getenv("LOKI_DASHBOARD_PATH", "")))
+DASHBOARD_MD = Path(os.getenv("TODO_DASHBOARD_PATH", ""))
 
 mcp = FastMCP("todocore-todos")
 
@@ -388,7 +386,7 @@ def now() -> str:
 
 # === Resources: read-only context ===
 
-@mcp.resource("loki://workdays")
+@mcp.resource("todo://workdays")
 def res_workdays() -> str:
     """Workday config (weekday -> active categories) as YAML.
 
@@ -402,13 +400,13 @@ def res_workdays() -> str:
         return f"ERROR: cannot read workday config: {e}"
 
 
-@mcp.resource("loki://workstreams")
+@mcp.resource("todo://workstreams")
 def res_workstreams() -> str:
-    """Deprecated alias of loki://workdays (kept for backward compatibility)."""
+    """Deprecated alias of todo://workdays (kept for backward compatibility)."""
     return res_workdays()
 
 
-@mcp.resource("loki://dashboard")
+@mcp.resource("todo://dashboard")
 def res_dashboard() -> str:
     """Today's dashboard (goals, workday pool, signals) as markdown."""
     try:
@@ -417,7 +415,7 @@ def res_dashboard() -> str:
         return f"ERROR: cannot read dashboard: {e}"
 
 
-@mcp.resource("loki://categories")
+@mcp.resource("todo://categories")
 def res_categories() -> str:
     """Distinct categories currently in use, one per line."""
     return _run(["categories"])

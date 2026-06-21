@@ -1,6 +1,6 @@
 """Smoke tests for the todocore CLI against a fresh temp DB.
 
-Proves the decoupling: runs with no crm.py, no Loki, no pre-existing DB. The
+Proves the decoupling: runs with no consumer code and no pre-existing DB. The
 CLI is invoked as a subprocess with TODO_DB_PATH pointed at a tmp file, so
 ensure_schema() must create the schema from scratch.
 """
@@ -13,8 +13,6 @@ from pathlib import Path
 
 def _run(db_path: Path, *args: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "TODO_DB_PATH": str(db_path)}
-    # Drop any LOKI_DB_PATH so the alias can't redirect us to a real DB.
-    env.pop("LOKI_DB_PATH", None)
     return subprocess.run(
         [sys.executable, "-m", "todocore.todo", *args],
         capture_output=True,

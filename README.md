@@ -18,11 +18,15 @@ dashboards). Those live in *consumers* that build on top of it.
   stays agnostic.
 - **MCP server** (optional extra) so MCP clients (Claude Desktop, Claude Code)
   can drive it.
-- **i18n.** English by default; German status/priority labels via `LOKI_LANG=de`.
+- **i18n.** English by default; German status/priority labels via `TODO_LANG=de`.
 
 ## Install
 
 ```bash
+# from PyPI-style install via pipx (recommended once published):
+pipx install todocore
+
+# from source:
 pip install -e .
 # with the MCP server:
 pip install -e ".[mcp]"
@@ -45,8 +49,7 @@ todo search "readme"
 The DB path is resolved in this order:
 
 1. `TODO_DB_PATH` — canonical, wins if set.
-2. `LOKI_DB_PATH` — accepted alias (for the Loki consumer).
-3. `~/.local/share/todocore/todos.db` — default.
+2. `~/.local/share/todocore/todos.db` — default.
 
 The parent directory is created on demand.
 

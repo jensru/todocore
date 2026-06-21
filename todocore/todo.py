@@ -1,82 +1,83 @@
 #!/usr/bin/env python3
-"""todocore Todo CLI — generischer SQLite-Backend Kern.
+"""todocore Todo CLI: a generic SQLite-backed todo core.
 
-Kanonische Befehle:
-    todo add "Name" --prio muss --deadline 2026-03-18 --due 2026-03-17 --tag content --ctx "Kontext" --repeat daily --deadline-type hard
-    todo list [--status offen] [--prio muss] [--tag content] [--limit 20]
+Canonical commands:
+    todo add "Name" --prio high --deadline 2026-03-18 --due 2026-03-17 --tag content --ctx "Context" --repeat daily --deadline-type hard
+    todo list [--status open] [--prio high] [--tag content] [--limit 20]
     todo show <ID>
     todo done <ID> [--external-id X] [--crm-followup 2026-07-01] [--crm-days 7]
     todo cancel <ID>
-    todo update <ID> --deadline 2026-03-20 --prio sollte --tag produkte --deadline-type soft [--external-id X | --crm X]
-    todo.py group <PARENT-ID> <KIND-ID> [<KIND-ID> ...]   (mehrere Todos unter einen Parent haengen)
-    todo.py today [--format markdown|table|json]
-    todo.py sync-dashboard                    (Dashboard [x] Items → done + Zeilen entfernen)
-    todo.py overdue
-    todo.py search "suchbegriff"
-    todo.py export
-    todo.py stale [--days 30]
+    todo update <ID> --deadline 2026-03-20 --prio medium --tag products --deadline-type soft [--external-id X | --crm X]
+    todo group <PARENT-ID> <CHILD-ID> [<CHILD-ID> ...]   (move several todos under one parent)
+    todo today [--format markdown|table|json]
+    todo sync-dashboard                       (sync [x] checkboxes from a markdown file -> done + drop lines)
+    todo overdue
+    todo search "term"
+    todo export
+    todo stale [--days 30]
 
-LLM-Resilienz: Aliase sind stille Rückfallnetze, kanonische Form bleibt First-Class.
-    Befehls-Aliase: add (new, create) | list (ls) | show (view, get)
-                    done (close, complete, finish) | cancel (rm, remove, delete)
-                    update (edit, set)
-    Flag-Aliase:    --prio (--priority, -p) | --tag (--cat, --category)
-                    --workstream (--ws, --workday) | --due (--scheduled)
-                    --body (--note, --notes, --desc, --description)
+LLM resilience: aliases are silent safety nets, the canonical form stays first-class.
+    Command aliases: add (new, create) | list (ls) | show (view, get)
+                     done (close, complete, finish) | cancel (rm, remove, delete)
+                     update (edit, set)
+    Flag aliases:    --prio (--priority, -p) | --tag (--cat, --category)
+                     --workstream (--ws, --workday) | --due (--scheduled)
+                     --body (--note, --notes, --desc, --description)
 
-IDs: Slugs aus dem Namen (z.B. "boerdi-bauen"). Alte TODO-NNN IDs funktionieren weiter.
-Status: open|done|cancelled (kanonisch; dt. Aliase offen|erledigt|abgesagt akzeptiert)
-Prio: high|medium|low (kanonisch; dt. Aliase muss|sollte|könnte akzeptiert)
-Anzeige-Sprache via LOKI_LANG (en default, de = deutsche Status-/Prio-Labels)
+IDs: slugs from the name (e.g. "write-the-docs"). Legacy TODO-NNN ids still resolve.
+Status: open|done|cancelled (canonical; German aliases offen|erledigt|abgesagt accepted)
+Prio: high|medium|low (canonical; German aliases muss|sollte|koennte accepted)
+Display language via TODO_LANG (en default, de = German status/priority labels)
 
-Workdays: monday | tuesday | wednesday | thursday | friday | saturday | sunday
-    (frueher "Workstream"). Kategorie-first: ein Todo traegt seine category, der
-    Workday mappt nur, welche Kategorien an welchem Wochentag aktiv sind.
-    Das DB-Feld 'workstream' ist abgeloest und bleibt leer (tot, aber vorhanden).
-Config: packs/daily/config/workstreams.yaml (Dateiname bleibt, Schema = workdays.<weekday>.categories)
+Workdays: monday | tuesday | wednesday | thursday | friday | saturday | sunday.
+    Category-first: a todo carries its category, the workday only maps which
+    categories are active on which weekday. The 'workstream' DB column is
+    superseded and stays empty (dead, but present for backward compatibility).
+Config path via TODO_WORKDAYS_CONFIG (schema = workdays.<weekday>.categories).
 
-Done-Event (transport-agnostisch, generisch):
-    Ein Todo kann via --external-id X (--external-system Y) mit einem externen System
-    verknüpft werden (add/update). --crm X ist ein generischer Alias fuer
-    --external-id X --external-system crm. Beim `done` feuert todo ein best-effort
-    'done'-Event:
+Done event (transport-agnostic, generic):
+    A todo can be linked to an external system via --external-id X
+    (--external-system Y) on add/update. --crm X is a generic shorthand for
+    --external-id X --external-system crm. On `done`, todo fires a best-effort
+    'done' event:
       1. TODO_DONE_WEBHOOK=<url>      -> POST JSON (event, todo, external_id, external_system)
-      2. TODO_DONE_HOOK=modul:func    -> in-process Hook(conn, todo, args)
-      3. sonst                        -> no-op
-    Der Kern selbst kennt KEINE Consumer-Logik (z.B. CRM). Solche Logik lebt im
-    Consumer (z.B. dem Loki Personality-Pack) und haengt sich per TODO_DONE_HOOK ein.
-    --crm-days / --crm-followup bleiben als generische Hook-Parameter am done erhalten.
+      2. TODO_DONE_HOOK=module:func   -> in-process hook(conn, todo, args)
+      3. otherwise                    -> no-op
+    The core itself knows NO consumer logic (e.g. a CRM). Such logic lives in a
+    consumer and hooks in via TODO_DONE_HOOK. --crm-days / --crm-followup are
+    kept as generic pass-through hook parameters on done.
 
-Body-Konvention (Dashboard-Rendering):
-    Body wird unter dem Todo eingerückt gerendert. Drei Modi:
-    - Checklist-Body (`- [ ]` / `- [x]`)         → komplett als Sub-Liste
-    - Kurzer Freitext (≤3 Zeilen, ≤200 Zeichen)  → komplett eingerückt
-    - Langer Freitext                            → Preview + "_(mehr: todo.py show <id>)_"
+Body convention (rendering):
+    The body is rendered indented under the todo. Three modes:
+    - Checklist body (`- [ ]` / `- [x]`)         -> rendered as a full sub-list
+    - Short free text (<=3 lines, <=200 chars)   -> fully indented
+    - Long free text                             -> preview + "_(more: todo show <id>)_"
 
-    Beispiel Checklist-Body:
-        todo.py add "Marketing-Tests" --body "$(printf -- '- [ ] Item A\\n- [ ] Item B')"
+    Checklist body example:
+        todo add "Marketing tests" --body "$(printf -- '- [ ] Item A\\n- [ ] Item B')"
 
-    Nutze Checklists statt mehrerer paralleler Todos, wenn die Items zusammen
-    erledigt werden sollen (1 ID, 1 Status, 1 Zeile auf dem Dashboard mit Sub-Items).
+    Use a checklist instead of several parallel todos when the items should be
+    completed together (1 id, 1 status, 1 line with sub-items).
 
-Parent/Child-Nesting (seit 2026-06-20):
-    Echtes Umhaengen, EINE Ebene tief. Jedes Kind behaelt eigene ID, Status, Faelligkeit.
-    Der Parent rollt den Fortschritt hoch (show zeigt "Kinder (2/5)").
-        todo.py add "Kind" --parent PARENT-ID      (direkt als Kind anlegen)
-        todo.py update KIND --parent PARENT-ID      (bestehendes Todo umhaengen)
-        todo.py update KIND --parent ""             (aus Gruppe loesen auf Top-Level)
-        todo.py group PARENT KIND-A KIND-B ...       (mehrere in einem Rutsch buendeln)
-    Guards (Exit 2): Self-Parent, fehlender Parent, mehr als eine Ebene (Kind unter Kind,
-    Parent-mit-Kindern verschachteln). Letztes Kind erledigt → Hinweis (kein Auto-Close).
-    Parent gecancelt → Kinder werden auf Top-Level geloest, verwaisen nie.
-    Wann Nesting vs. Checklist: Checklist, wenn die Items zusammen als 1 Status erledigt
-    werden. Nesting, wenn jedes Kind eigene Faelligkeit/eigenen Status braucht aber unter
-    einem Sammel-Todo gefuehrt werden soll.
+Parent/child nesting:
+    Real re-parenting, ONE level deep. Each child keeps its own id, status and
+    due date. The parent rolls up progress (show displays "Children (2/5)").
+        todo add "Child" --parent PARENT-ID      (create directly as a child)
+        todo update CHILD --parent PARENT-ID      (re-parent an existing todo)
+        todo update CHILD --parent ""             (detach to top level)
+        todo group PARENT CHILD-A CHILD-B ...      (bucket several at once)
+    Guards (exit 2): self-parent, missing parent, more than one level (child
+    under a child, nesting a parent that has children). Last child done -> note
+    (no auto-close). Parent cancelled -> children are detached to top level,
+    never orphaned.
+    Nesting vs. checklist: use a checklist when the items are completed together
+    as one status. Use nesting when each child needs its own due date/status but
+    should be tracked under a collecting todo.
 
-Fehler-Logging: argparse-Fehler und Exceptions landen in tool_errors-Tabelle
-(memory.db). Source 'loki' wenn CLAUDECODE=1 gesetzt, sonst 'human'.
-Auswertung: SELECT tool, command, error_msg, COUNT(*) FROM tool_errors
-            GROUP BY tool, command, error_msg ORDER BY COUNT(*) DESC;
+Error logging: argparse errors and exceptions land in the tool_errors table.
+The source label comes from TODO_AGENT (or 'agent' under an agent, else 'cli').
+Analysis: SELECT tool, command, error_msg, COUNT(*) FROM tool_errors
+          GROUP BY tool, command, error_msg ORDER BY COUNT(*) DESC;
 """
 
 import argparse
@@ -94,18 +95,18 @@ from todocore.db import open_db as _shared_open_db, DB_PATH
 from todocore.tool_errors import LoggingArgumentParser, log_error
 from todocore.messages import t as _t_raw
 WORKSTREAMS_CONFIG = Path(os.getenv(
-    "LOKI_WORKSTREAMS_CONFIG",
-    str(Path(__file__).resolve().parent.parent / "packs/daily/config/workstreams.yaml"),
+    "TODO_WORKDAYS_CONFIG",
+    str(Path(__file__).resolve().parent.parent / "config/workdays.yaml"),
 ))
-# Workday-Keys = Wochentage (frueher freie Workstream-Namen). Fallback, falls die
-# YAML-Config fehlt. Die DB-Spalte heisst weiter 'workstream' (tot, NICHT umbenannt).
+# Workday keys = weekdays. Fallback if the YAML config is missing. The DB column
+# is still named 'workstream' (dead, NOT renamed, kept for backward compat).
 VALID_WORKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-VALID_WORKSTREAMS = VALID_WORKDAYS  # Rueckwaerts-Alias
+VALID_WORKSTREAMS = VALID_WORKDAYS  # backward-compat alias
 
 # --- i18n: canonical enum values are English; German is accepted as input. ---
 # Stored in the DB: status open|done|cancelled, priority high|medium|low.
-# Display language for status/priority labels (Loki sets LOKI_LANG=de).
-LANG = os.getenv('LOKI_LANG', 'en')
+# Display language for status/priority labels (set TODO_LANG=de for German).
+LANG = os.getenv('TODO_LANG', 'en')
 
 STATUS_OPEN, STATUS_DONE, STATUS_CANCELLED = 'open', 'done', 'cancelled'
 VALID_STATUS = [STATUS_OPEN, STATUS_DONE, STATUS_CANCELLED]
@@ -175,13 +176,13 @@ def _open_db():
 
 
 def _ensure_table(conn):
-    """Schema sicherstellen + additive Laufzeit-Migration (idempotent).
+    """Ensure the schema + additive runtime migration (idempotent).
 
-    Zuerst legt ensure_schema() alle Tabellen mit CREATE TABLE IF NOT EXISTS an,
-    sodass eine frische Standalone-DB ohne Host-App (kein index.py) funktioniert.
-    Danach laufen die additiven ALTER-Migrationen fuer Alt-DBs, die noch ohne
-    crm_id/parent_id/external_* angelegt wurden. Der `cols and`-Check verhindert
-    ein ALTER auf einer noch gar nicht existierenden Tabelle.
+    First ensure_schema() creates every table with CREATE TABLE IF NOT EXISTS,
+    so a fresh standalone DB works without any host app. Then the additive ALTER
+    migrations run for legacy DBs that were created without
+    crm_id/parent_id/external_*. The `cols and` check prevents an ALTER on a
+    table that does not exist yet.
     """
     from todocore.schema import ensure_schema
     ensure_schema(conn)
@@ -192,8 +193,9 @@ def _ensure_table(conn):
     if cols and 'parent_id' not in cols:
         conn.execute("ALTER TABLE todos ADD COLUMN parent_id TEXT DEFAULT ''")
         conn.commit()
-    # Generischer Link nach aussen (Phase D): external_id + external_system entkoppeln die
-    # Done-Rueckkopplung von CRM. crm_id bleibt als Spiegel fuer Backward-Compat befuellt.
+    # Generic outbound link: external_id + external_system decouple the done
+    # feedback from any specific CRM. crm_id stays populated as a mirror for
+    # backward compatibility.
     if cols and 'external_id' not in cols:
         conn.execute("ALTER TABLE todos ADD COLUMN external_id TEXT DEFAULT ''")
         conn.commit()
@@ -209,10 +211,10 @@ def _dict_from_row(row):
     return dict(row)
 
 
-# --- Workdays (frueher "Workstreams") ---
-# Schema: workdays.<weekday>.categories[]. Der Wochentag-Key IST der Workday.
-# Kategorie-first: das Todo traegt seine category, der Workday mappt nur, welche
-# Kategorien an dem Tag aktiv sind. Das DB-Feld 'workstream' bleibt tot/leer.
+# --- Workdays ---
+# Schema: workdays.<weekday>.categories[]. The weekday key IS the workday.
+# Category-first: the todo carries its category, the workday only maps which
+# categories are active on that day. The 'workstream' DB column stays dead/empty.
 
 WEEKDAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
@@ -224,15 +226,15 @@ def _load_workdays_config():
     return None
 
 
-# Rueckwaerts-Alias: alter Name, neue Implementierung.
+# Backward-compat alias: old name, new implementation.
 _load_workstreams_config = _load_workdays_config
 
 
 def _valid_workdays():
-    """Gueltige Workday-Keys = Wochentage, aus der Config abgeleitet.
+    """Valid workday keys = weekdays, derived from the config.
 
-    Faellt auf VALID_WORKDAYS (monday..sunday) zurueck, falls die Config fehlt
-    oder leer ist, damit ein generischer Install ohne YAML weiter funktioniert.
+    Falls back to VALID_WORKDAYS (monday..sunday) if the config is missing or
+    empty, so a generic install without YAML keeps working.
     """
     config = _load_workdays_config()
     if config and config.get('workdays'):
@@ -240,12 +242,12 @@ def _valid_workdays():
     return list(VALID_WORKDAYS)
 
 
-# Rueckwaerts-Alias.
+# Backward-compat alias.
 _valid_workstreams = _valid_workdays
 
 
 def _today_workday():
-    """Heutiger Workday-Key (monday..sunday) anhand date.today().weekday()."""
+    """Today's workday key (monday..sunday) from date.today().weekday()."""
     config = _load_workdays_config()
     if not config:
         return None
@@ -255,7 +257,7 @@ def _today_workday():
     return None
 
 
-# Rueckwaerts-Alias.
+# Backward-compat alias.
 _today_workstream = _today_workday
 
 
@@ -299,7 +301,7 @@ def _next_id(conn):
 # --- Query helpers ---
 
 def _normalize_id(todo_id):
-    """Bare numbers → TODO-NNN format."""
+    """Bare numbers -> TODO-NNN format."""
     if re.match(r'^\d+$', todo_id):
         return f"TODO-{int(todo_id):03d}"
     return todo_id
@@ -359,10 +361,10 @@ def _update_todo(conn, todo_id, **fields):
     conn.commit()
 
 
-# --- Hierarchie (Parent/Child, eine Ebene tief) ---
+# --- Hierarchy (parent/child, one level deep) ---
 
 def _children(conn, parent_id, status=None):
-    """Alle Kinder eines Todos, optional nach Status gefiltert, älteste zuerst."""
+    """All children of a todo, optionally filtered by status, oldest first."""
     q = "SELECT * FROM todos WHERE parent_id = ?"
     params = [parent_id]
     if status:
@@ -373,7 +375,7 @@ def _children(conn, parent_id, status=None):
 
 
 def _child_progress(conn, parent_id):
-    """(erledigt, gesamt) über alle Kinder, oder None wenn kinderlos."""
+    """(done, total) across all children, or None if childless."""
     kids = _children(conn, parent_id)
     if not kids:
         return None
@@ -382,13 +384,13 @@ def _child_progress(conn, parent_id):
 
 
 def _validate_parent(conn, child_id, parent_ref):
-    """Parent-Referenz auflösen + prüfen. Gibt die aufgelöste Parent-ID zurück.
+    """Resolve + validate a parent reference. Returns the resolved parent id.
 
-    Konventionen:
-      parent_ref None  → kein Eingriff (Aufrufer ignoriert)
-      parent_ref ''    → loslösen auf Top-Level
-    Guards (ValueError): Self-Parent, fehlender Parent, mehr als eine Ebene
-    (Parent ist selbst Kind / Child hat selbst Kinder).
+    Conventions:
+      parent_ref None  -> no change (caller ignores)
+      parent_ref ''    -> detach to top level
+    Guards (ValueError): self-parent, missing parent, more than one level
+    (parent is itself a child / child has children of its own).
     """
     if parent_ref is None:
         return None
@@ -396,14 +398,14 @@ def _validate_parent(conn, child_id, parent_ref):
         return ''
     p = _get_todo(conn, parent_ref)
     if not p:
-        raise ValueError(f"Parent {parent_ref} nicht gefunden")
+        raise ValueError(f"Parent {parent_ref} not found")
     pid = p['id']
     if pid == child_id:
-        raise ValueError("Ein Todo kann nicht sein eigener Parent sein")
+        raise ValueError("A todo cannot be its own parent")
     if (p.get('parent_id') or ''):
-        raise ValueError(f"{pid} ist selbst ein Kind, nur eine Ebene erlaubt")
+        raise ValueError(f"{pid} is itself a child, only one level allowed")
     if child_id and _children(conn, child_id):
-        raise ValueError(f"{child_id} hat selbst Kinder, erst auflösen")
+        raise ValueError(f"{child_id} has children of its own, detach them first")
     return pid
 
 
@@ -481,10 +483,10 @@ def _format_todos(todos, fmt='table'):
     return _format_table(todos)
 
 
-# --- Echtzeit-Sync: Todo → entries (FTS) ---
+# --- Real-time sync: todo -> entries (FTS) ---
 
 def _sync_todo_to_entries(conn, todo_id):
-    """Sync einzelnen Todo in entries-Tabelle für FTS-Suche."""
+    """Sync a single todo into the entries table for FTS search."""
     t = _get_todo(conn, todo_id)
     if not t:
         return
@@ -512,9 +514,9 @@ def _sync_todo_to_entries(conn, todo_id):
 # --- Commands ---
 
 def _infer_workday(category, config=None):
-    """Leitet den Workday (Wochentag-Key) aus einer Category ab.
+    """Infer the workday (weekday key) from a category.
 
-    Findet den ersten Wochentag, dessen categories-Liste die Kategorie enthaelt.
+    Finds the first weekday whose categories list contains the category.
     """
     if not category:
         return ''
@@ -528,16 +530,17 @@ def _infer_workday(category, config=None):
     return ''
 
 
-# Rueckwaerts-Alias.
+# Backward-compat alias.
 _infer_workstream = _infer_workday
 
 
 def _resolve_workstream(value):
-    """Loest den Wert des --workstream/--workday-Flags auf (schreibt die tote DB-Spalte).
+    """Resolve the --workstream/--workday flag value (writes the dead DB column).
 
-    Akzeptiert einen Workday-Key (monday..sunday) ODER eine Kategorie. Gibt
-    (workday, kategorie_hint) zurueck. Beispiel: 'content' (Kategorie) ->
-    ('monday', 'content'). Unbekanntes -> (value, None) mit Warnung statt Crash.
+    Accepts a workday key (monday..sunday) OR a category. Returns
+    (workday, category_hint). Example: 'content' (category) ->
+    ('monday', 'content'). Anything unknown -> (value, None) with a warning
+    instead of a crash.
     """
     if not value:
         return '', None
@@ -546,11 +549,11 @@ def _resolve_workstream(value):
         return v, None
     inferred = _infer_workday(v)
     if inferred:
-        print(f"Hinweis: '{value}' ist eine Kategorie, Workday → '{inferred}'",
+        print(f"Note: '{value}' is a category, workday -> '{inferred}'",
               file=sys.stderr)
         return inferred, v
-    print(f"Warnung: '{value}' ist kein bekannter Workday {_valid_workdays()}, "
-          f"speichere roh.", file=sys.stderr)
+    print(f"Warning: '{value}' is not a known workday {_valid_workdays()}, "
+          f"storing as-is.", file=sys.stderr)
     return v, None
 
 
@@ -571,9 +574,9 @@ def cmd_add(args):
     scheduled = getattr(args, 'due', None) or args.scheduled
     tag = getattr(args, 'tag', None)
 
-    # Workday-Pin (tote DB-Spalte 'workstream'): explizit (akzeptiert auch Kategorie-Namen)
-    # > aus Category ableiten. --workstream/--workday "" = kategorie-rein, kein Auto-Pin
-    # (die category steuert ueber den Workday-Mapping den Tag).
+    # Workday pin (dead 'workstream' DB column): explicit (also accepts category
+    # names) > inferred from category. --workstream/--workday "" = category-only,
+    # no auto-pin (the category drives the day via the workday mapping).
     if args.workstream == '':
         workstream = ''
     else:
@@ -591,7 +594,7 @@ def cmd_add(args):
     eid, esys = _external_fields_from_args(args)
     eid = eid or ''
     esys = esys or ''
-    crm_mirror = eid if esys == 'crm' else ''  # Backward-Compat: crm_id-Spiegel
+    crm_mirror = eid if esys == 'crm' else ''  # backward-compat crm_id mirror
 
     conn.execute(
         "INSERT INTO todos (id, name, status, priority, category, deadline, scheduled, "
@@ -614,7 +617,7 @@ def cmd_list(args):
     conn = _open_db()
     tag = getattr(args, 'tag', None)
     ws = _resolve_workstream(args.workstream)[0] if args.workstream else None
-    # Limit erst nach den Post-Filtern anwenden, sonst schneidet es zu früh ab.
+    # Apply the limit only after the post-filters, otherwise it cuts off too early.
     status = _resolve_status(args.status)
     if status in ('all', 'alle'):
         status = None
@@ -701,16 +704,16 @@ def _create_repeat_todo(conn, original):
 
 
 def _resolve_external_id(t):
-    """Generische External-ID eines Todos (reine external_id-Spalte, keine Heuristik)."""
+    """Generic external id of a todo (plain external_id column, no heuristics)."""
     return (t.get('external_id') or '').strip().upper()
 
 
 def _external_fields_from_args(args):
-    """(external_id, external_system) aus CLI-Args aufloesen.
+    """Resolve (external_id, external_system) from CLI args.
 
-    --crm X ist ein Alias fuer --external-id X --external-system crm. Liefert (None, None)
-    wenn weder --crm noch --external-id gesetzt wurden (= Feld unangetastet lassen).
-    Leerer Wert ('') = loeschen.
+    --crm X is an alias for --external-id X --external-system crm. Returns
+    (None, None) when neither --crm nor --external-id was set (= leave the field
+    untouched). An empty value ('') = clear it.
     """
     crm = getattr(args, 'crm', None)
     eid = getattr(args, 'external_id', None)
@@ -727,12 +730,12 @@ def _external_fields_from_args(args):
     return None, None
 
 
-# --- Done-Event (transport-agnostisch) ---
-# Beim Erledigen feuert todo.py ein best-effort 'done'-Event. Reihenfolge:
-#   1. TODO_DONE_WEBHOOK  -> POST JSON an eine URL (Cloud-DB-faehig)
-#   2. TODO_DONE_HOOK     -> 'modul:func', in-process aufgerufen (teilt die offene Connection)
-#   3. sonst              -> no-op (der generische Kern kennt keine Consumer-Logik wie CRM)
-# Ein Hook-Fehler darf das erledigt NIE zurueckrollen, daher alles in try/except.
+# --- Done event (transport-agnostic) ---
+# On done, todo.py fires a best-effort 'done' event. Order:
+#   1. TODO_DONE_WEBHOOK  -> POST JSON to a URL
+#   2. TODO_DONE_HOOK     -> 'module:func', called in-process (shares the open connection)
+#   3. otherwise          -> no-op (the generic core knows no consumer logic like a CRM)
+# A hook failure must NEVER roll back the done, hence everything is in try/except.
 
 def _fire_done_event(conn, todo, args):
     webhook = os.getenv('TODO_DONE_WEBHOOK')
@@ -742,13 +745,13 @@ def _fire_done_event(conn, todo, args):
             _post_done_webhook(webhook, todo)
         elif hook:
             _call_done_hook(hook, conn, todo, args)
-        # sonst: no-op. Consumer (z.B. Loki) setzen TODO_DONE_HOOK fuer ihre Logik.
+        # otherwise: no-op. Consumers set TODO_DONE_HOOK for their own logic.
     except Exception as e:
         print(_t('done_hook_warn', error=e), file=sys.stderr)
 
 
 def _post_done_webhook(url, todo):
-    """Fire-and-forget POST. Ein nicht erreichbarer Empfaenger darf das done nicht kippen."""
+    """Fire-and-forget POST. An unreachable receiver must not topple the done."""
     import json as _json
     import urllib.request
     payload = _json.dumps({
@@ -768,7 +771,7 @@ def _post_done_webhook(url, todo):
 
 
 def _call_done_hook(spec, conn, todo, args):
-    """In-process Hook via 'modul:func'. Bekommt die offene Connection fuer Cross-Table-Touch."""
+    """In-process hook via 'module:func'. Gets the open connection for cross-table writes."""
     import importlib
     mod_name, sep, func_name = spec.partition(':')
     if not (mod_name and sep and func_name):
@@ -785,7 +788,7 @@ def cmd_done(args):
         print(_t('not_found', id=args.id), file=sys.stderr)
         sys.exit(1)
 
-    # Vorher-Status merken (für Idempotenz: kein erneuter CRM-Touch bei Doppel-done)
+    # Remember the prior status (for idempotency: no repeated event on double-done)
     already_done = (t.get('status') == STATUS_DONE)
 
     _update_todo(conn, args.id, status=STATUS_DONE, done_date=date.today().isoformat())
@@ -793,14 +796,14 @@ def cmd_done(args):
     if note:
         existing = t.get('body', '') or ''
         stamp = date.today().isoformat()
-        new_body = (f"{existing}\n[{stamp} erledigt] {note}").strip()
+        new_body = (f"{existing}\n[{stamp} done] {note}").strip()
         _update_todo(conn, args.id, body=new_body)
     _sync_todo_to_entries(conn, args.id)
     print(_t('done', id=t['id'], name=t['name']))
 
-    # Done-Event (transport-agnostisch): verknuepfter Lead/External-System wird best-effort
-    # benachrichtigt. Laeuft NACH dem erledigt-Commit, kippt das erledigt nie zurueck.
-    # Idempotent: bei Doppel-done (already_done) kein erneutes Feuern.
+    # Done event (transport-agnostic): the linked external system is notified
+    # best-effort. Runs AFTER the done commit, never rolls the done back.
+    # Idempotent: no re-fire on double-done (already_done).
     if not already_done:
         t['status'] = STATUS_DONE
         t['done_date'] = date.today().isoformat()
@@ -813,7 +816,7 @@ def cmd_done(args):
             next_date = new.get('scheduled') or new.get('deadline')
             print(_t('repeat', id=new['id'], name=new['name'], next=next_date))
 
-    # Wenn dies das letzte offene Kind war → Parent kann geschlossen werden (kein Auto-Close).
+    # If this was the last open child -> the parent can be closed (no auto-close).
     parent_id = (t.get('parent_id') or '')
     if parent_id:
         prog = _child_progress(conn, parent_id)
@@ -831,7 +834,7 @@ def cmd_cancel(args):
     if not t:
         print(_t('not_found', id=args.id), file=sys.stderr)
         sys.exit(1)
-    # Parent mit Kindern: Kinder auf Top-Level loslösen statt verwaisen lassen.
+    # Parent with children: detach the children to top level instead of orphaning them.
     kids = _children(conn, t['id'])
     if kids:
         for k in kids:
@@ -884,7 +887,7 @@ def cmd_update(args):
         fields['repeat'] = args.repeat
     if args.workstream is not None:
         if args.workstream == '':
-            # Explizit leeren: category steuert den Tag (Workday-Mapping), nicht das tote Pin
+            # Explicitly clear: the category drives the day (workday mapping), not the dead pin
             fields['workstream'] = ''
         else:
             ws, cat_hint = _resolve_workstream(args.workstream)
@@ -899,7 +902,7 @@ def cmd_update(args):
     if eid is not None:
         fields['external_id'] = eid
         fields['external_system'] = esys or ''
-        # crm_id-Spiegel fuer Backward-Compat (Reader die noch crm_id lesen).
+        # crm_id mirror for backward compat (readers that still read crm_id).
         fields['crm_id'] = eid if (esys or '') == 'crm' else ''
     if getattr(args, 'parent', None) is not None:
         try:
@@ -917,7 +920,7 @@ def cmd_update(args):
 
 
 def cmd_group(args):
-    """Mehrere Todos in einem Rutsch unter einen Parent hängen (umhängen)."""
+    """Move several todos under one parent in a single call (re-parenting)."""
     conn = _open_db()
     parent = _get_todo(conn, args.parent)
     if not parent:
@@ -948,7 +951,7 @@ def cmd_group(args):
 
 
 def cmd_workdays(args):
-    """Listet die Workdays (Wochentage) + ihre Kategorien (verhindert Workday/Kategorie-Verwechslung)."""
+    """List the workdays (weekdays) + their categories (avoids workday/category confusion)."""
     config = _load_workdays_config() or {}
     rows = []
     for day_key in _valid_workdays():
@@ -959,7 +962,7 @@ def cmd_workdays(args):
     print('\n'.join(rows))
 
 
-# Rueckwaerts-Alias (CLI-Subcommand 'workstreams' bleibt nutzbar).
+# Backward-compat alias (the 'workstreams' CLI subcommand stays usable).
 cmd_workstreams = cmd_workdays
 
 
@@ -1011,14 +1014,14 @@ def cmd_search(args):
 
 
 def _workday_categories(config, day_key):
-    """Gibt die categories-Liste fuer einen Workday (Wochentag-Key) zurueck."""
+    """Return the categories list for a workday (weekday key)."""
     if not config or not day_key:
         return []
     day_config = config.get('workdays', {}).get(day_key, {}) or {}
     return day_config.get('categories', [])
 
 
-# Rueckwaerts-Alias.
+# Backward-compat alias.
 _ws_categories = _workday_categories
 
 
@@ -1026,13 +1029,12 @@ def cmd_today(args):
     conn = _open_db()
     today_date = date.today()
     today_iso = today_date.isoformat()
-    wd = _today_workday()  # heutiger Workday-Key (monday..sunday)
+    wd = _today_workday()  # today's workday key (monday..sunday)
 
     config = _load_workdays_config()
     always_visible = config.get('always_visible', []) if config else []
     wd_cats = _workday_categories(config, wd)
-    # Schwelle fuer die Ueberfaellig-Warnung (config-getrieben, Default 7). Phase E: raus
-    # aus dem Hardcode, generisch konfigurierbar.
+    # Threshold for the overdue warning (config-driven, default 7).
     warn_days = int(config.get('overdue_warning_days', 7)) if config else 7
 
     open_todos = _get_todos(conn, status=STATUS_OPEN)
@@ -1041,13 +1043,13 @@ def cmd_today(args):
     selected = []
     for t in open_todos:
         reasons = []
-        t_ws = t.get('workstream', '')  # tote DB-Spalte, i.d.R. leer
+        t_ws = t.get('workstream', '')  # dead DB column, usually empty
         t_cat = t.get('category', '')
         t_sched = str(t.get('scheduled', ''))
         t_dl = str(t.get('deadline', ''))
         t_dl_type = t.get('deadline_type', 'soft')
 
-        # Scheduled in der Zukunft → nicht über den Workday reinziehen
+        # Scheduled in the future -> do not pull in via the workday
         future_scheduled = False
         if t_sched:
             try:
@@ -1055,7 +1057,7 @@ def cmd_today(args):
             except (ValueError, TypeError):
                 pass
 
-        # Workday-Match: explizit gepinntes (totes) Feld ODER category faellt in den heutigen Workday
+        # Workday match: explicitly pinned (dead) field OR the category falls into today's workday
         if wd and t_ws == wd and not future_scheduled:
             reasons.append('workday')
         elif wd and not t_ws and t_cat and t_cat in wd_cats and not future_scheduled:
@@ -1071,15 +1073,15 @@ def cmd_today(args):
                     reasons.append('deadline_today')
             except (ValueError, TypeError):
                 pass
-        # Carry-over: Todo gehoert per Kategorie zum heutigen Workday, ist aber mit einem
-        # scheduled-Datum in der Vergangenheit liegengeblieben. (Kategorie-first; das tote
-        # workstream-Feld spielt keine Rolle mehr.)
+        # Carry-over: the todo belongs to today's workday by category but was left
+        # behind with a scheduled date in the past. (Category-first; the dead
+        # workstream field no longer matters.)
         if t_sched and t_sched < today_iso and wd and not t_ws and t_cat and t_cat in wd_cats:
             reasons.append('overdue_workday')
 
         if reasons:
             t['_reasons'] = reasons
-            # Layer-Zuordnung: termin > crosscutting > pool
+            # Layer assignment: appointment > crosscutting > pool
             if any(r in reasons for r in ('scheduled', 'deadline_today', 'hard_deadline')):
                 t['_layer'] = 'termin'
             elif 'overdue_workday' in reasons:
@@ -1098,14 +1100,14 @@ def cmd_today(args):
         t_dl = str(t.get('deadline', ''))
         t_cat = t.get('category', '')
         t_sched = str(t.get('scheduled', ''))
-        # Skip wenn explizit in die Zukunft gescheduled — dann ist es nicht vergessen
+        # Skip if explicitly scheduled in the future -> then it is not forgotten
         if t_sched:
             try:
                 if date.fromisoformat(t_sched) > today_date:
                     continue
             except (ValueError, TypeError):
                 pass
-        # Ueberfaellig auf einem ANDEREN Workday: Kategorie heute nicht aktiv, Deadline > N Tage.
+        # Overdue on a DIFFERENT workday: category not active today, deadline > N days.
         if t_dl and t_cat and t_cat not in wd_cats:
             try:
                 dl_date = date.fromisoformat(t_dl)
@@ -1120,7 +1122,7 @@ def cmd_today(args):
         import json as _json
         output = {
             'workday': wd or '',
-            'workstream': wd or '',  # Rueckwaerts-Alias fuer alte Konsumenten
+            'workstream': wd or '',  # backward-compat alias for old consumers
             'todos': selected,
             'warnings': warnings,
         }
@@ -1176,18 +1178,20 @@ def _print_today_markdown(todos, workday, warnings=None):
 
 
 def cmd_sync_dashboard(args):
-    dashboard = Path(os.getenv(
-        "LOKI_DASHBOARD_PATH",
-        str(Path.home() / "SynologyDrive/Daily/Dashboard.md"),
-    ))
-    if not dashboard.exists():
-        print("Dashboard.md nicht gefunden.", file=sys.stderr)
+    """Sync [x] checkboxes from a markdown file: mark matching todos done + drop their lines.
+
+    Generic feature: point TODO_DASHBOARD_PATH at any markdown file whose lines end
+    in a todo id in parentheses, e.g. "- [x] Write the docs (write-the-docs)".
+    """
+    dashboard = Path(os.getenv("TODO_DASHBOARD_PATH", ""))
+    if not str(dashboard) or not dashboard.exists():
+        print("Markdown file not found (set TODO_DASHBOARD_PATH).", file=sys.stderr)
         sys.exit(1)
 
     text = dashboard.read_text(encoding='utf-8')
     done_ids = []
     open_ids = []
-    # Greedy bis zur LETZTEN Klammer (Slug-ID steht am Zeilenende, nicht z.B. "(carry-over)")
+    # Greedy up to the LAST parenthesis (the slug id is at the line end, not e.g. "(carry-over)")
     todo_pattern = re.compile(r'- \[([ x])\] .*\(([a-z][a-z0-9_-]+)\)\s*$', re.IGNORECASE)
 
     for line in text.split('\n'):
@@ -1201,7 +1205,7 @@ def cmd_sync_dashboard(args):
                 open_ids.append(todo_id)
 
     if not done_ids and not open_ids:
-        print("Keine Todo-Referenzen im Dashboard gefunden.")
+        print("No todo references found in the file.")
         return
 
     conn = _open_db()
@@ -1216,7 +1220,7 @@ def cmd_sync_dashboard(args):
             _sync_todo_to_entries(conn, tid)
             print(f"  DONE: {tid} — {t['name']}")
             synced += 1
-        # Auch schon erledigte [x]-Zeilen aus dem Dashboard ausräumen
+        # Also clear already-done [x] lines from the file
         done_for_removal.add(tid)
 
     conn.close()
@@ -1231,7 +1235,7 @@ def cmd_sync_dashboard(args):
             m = todo_pattern.search(line)
             if m and m.group(1).lower() == 'x' and m.group(2) in done_for_removal:
                 i += 1
-                # Folgende eingerückte Body-Zeilen mit-entfernen
+                # Remove the following indented body lines as well
                 while i < len(lines) and lines[i] and (lines[i].startswith('  ') or lines[i].startswith('\t')):
                     i += 1
                 removed += 1
@@ -1239,15 +1243,15 @@ def cmd_sync_dashboard(args):
             out.append(line)
             i += 1
         new_text = '\n'.join(out)
-        # 3+ Leerzeilen kollabieren
+        # Collapse 3+ blank lines
         new_text = re.sub(r'\n{3,}', '\n\n', new_text)
         if new_text != text:
             dashboard.write_text(new_text, encoding='utf-8')
 
-    msg = f"\nSync: {synced} Todos erledigt"
+    msg = f"\nSync: {synced} todos marked done"
     if removed:
-        msg += f", {removed} Zeilen aus Dashboard entfernt"
-    msg += f", {len(open_ids)} noch offen."
+        msg += f", {removed} lines removed from the file"
+    msg += f", {len(open_ids)} still open."
     print(msg)
 
 
@@ -1273,7 +1277,7 @@ def cmd_show(args):
     label_order = ['id', 'name', 'status', 'priority', 'workstream', 'category',
                    'deadline', 'deadline_type', 'scheduled', 'repeat',
                    'created', 'done_date', 'context', 'body']
-    skip = set(label_order) | {'parent_id'}  # parent_id wird unten als Breadcrumb gerendert
+    skip = set(label_order) | {'parent_id'}  # parent_id is rendered below as a breadcrumb
     width = max(len(k) for k in label_order) + 2
     for k in label_order:
         v = t.get(k, '')
@@ -1306,7 +1310,7 @@ def cmd_show(args):
 
 
 def cmd_stale(args):
-    """Listet offene KÖNNTE-Todos die älter als N Tage sind."""
+    """List open low-priority todos older than N days."""
     conn = _open_db()
     cutoff = (date.today() - timedelta(days=args.days)).isoformat()
     rows = conn.execute(
@@ -1324,13 +1328,13 @@ def cmd_stale(args):
     for r in rows:
         age = (date.today() - date.fromisoformat(r['created'])).days
         ws = r['workstream'] or '-'
-        print(f"  {r['id']}  |  {r['name']}  |  {ws}  |  {age}d alt  |  erstellt {r['created']}")
+        print(f"  {r['id']}  |  {r['name']}  |  {ws}  |  {age}d old  |  created {r['created']}")
 
 
 # --- Main ---
 
 def main():
-    parser = LoggingArgumentParser(description='Loki Todo CLI')
+    parser = LoggingArgumentParser(description='todocore Todo CLI')
     parser._tool_name = 'todo'
     sub = parser.add_subparsers(dest='command')
 
@@ -1346,10 +1350,10 @@ def main():
     p_add.add_argument('--workstream', '--ws', '--workday', dest='workstream')
     p_add.add_argument('--deadline-type', dest='deadline_type', choices=['hard', 'soft'])
     p_add.add_argument('--body', '--note', '--notes', '--desc', '--description', dest='body')
-    p_add.add_argument('--external-id', dest='external_id', help='Generische External-ID (z.B. CRM-024). Beim done feuert der konfigurierte Hook.')
-    p_add.add_argument('--external-system', dest='external_system', help='External-System (z.B. crm). Leer = aus External-ID abgeleitet.')
-    p_add.add_argument('--crm', dest='crm', help='Alias fuer --external-id X --external-system crm. Beim done flippt der Lead auf ball=them.')
-    p_add.add_argument('--parent', dest='parent', help='Parent-Todo-ID — dieses Todo als Kind anlegen (eine Ebene tief).')
+    p_add.add_argument('--external-id', dest='external_id', help='Generic external id (e.g. CRM-024). On done the configured hook fires.')
+    p_add.add_argument('--external-system', dest='external_system', help='External system (e.g. crm). Empty = inferred from the external id.')
+    p_add.add_argument('--crm', dest='crm', help='Alias for --external-id X --external-system crm.')
+    p_add.add_argument('--parent', dest='parent', help='Parent todo id: create this todo as a child (one level deep).')
     p_add.add_argument('--force', action='store_true', help='Skip duplicate check')
 
     p_list = sub.add_parser('list', aliases=['ls'])
@@ -1370,8 +1374,8 @@ def main():
     p_done = sub.add_parser('done', aliases=['close', 'complete', 'finish'])
     p_done.add_argument('id')
     p_done.add_argument('--note', '--body', '--notes', dest='note')
-    p_done.add_argument('--crm-followup', dest='crm_followup', help='Festes Follow-up-Datum für den CRM-Touch (YYYY-MM-DD)')
-    p_done.add_argument('--crm-days', dest='crm_days', type=int, help='Wartefenster in Tagen für den CRM-Touch (Default 7)')
+    p_done.add_argument('--crm-followup', dest='crm_followup', help='Fixed follow-up date passed through to the done hook (YYYY-MM-DD)')
+    p_done.add_argument('--crm-days', dest='crm_days', type=int, help='Wait window in days passed through to the done hook (default 7)')
 
     p_cancel = sub.add_parser('cancel', aliases=['rm', 'remove', 'delete'])
     p_cancel.add_argument('id')
@@ -1392,14 +1396,14 @@ def main():
     p_update.add_argument('--workstream', '--ws', '--workday', dest='workstream')
     p_update.add_argument('--deadline-type', dest='deadline_type', choices=['hard', 'soft'])
     p_update.add_argument('--body', '--note', '--notes', '--desc', '--description', dest='body')
-    p_update.add_argument('--external-id', dest='external_id', help='External-ID verknüpfen/ändern (leer = lösen)')
-    p_update.add_argument('--external-system', dest='external_system', help='External-System (z.B. crm)')
-    p_update.add_argument('--crm', dest='crm', help='Alias fuer --external-id X --external-system crm (leer = lösen)')
-    p_update.add_argument('--parent', dest='parent', help='Unter Parent hängen (Umhängen). Leer ("") = auf Top-Level loslösen.')
+    p_update.add_argument('--external-id', dest='external_id', help='Link/change external id (empty = clear)')
+    p_update.add_argument('--external-system', dest='external_system', help='External system (e.g. crm)')
+    p_update.add_argument('--crm', dest='crm', help='Alias for --external-id X --external-system crm (empty = clear)')
+    p_update.add_argument('--parent', dest='parent', help='Move under a parent (re-parent). Empty ("") = detach to top level.')
 
     p_group = sub.add_parser('group')
-    p_group.add_argument('parent', help='Parent-Todo-ID')
-    p_group.add_argument('children', nargs='+', help='Eine oder mehrere Kind-Todo-IDs')
+    p_group.add_argument('parent', help='Parent todo id')
+    p_group.add_argument('children', nargs='+', help='One or more child todo ids')
 
     p_today = sub.add_parser('today')
     p_today.add_argument('--format', choices=['markdown', 'table', 'json'], default='table')
@@ -1414,7 +1418,7 @@ def main():
     p_export = sub.add_parser('export')
 
     p_stale = sub.add_parser('stale')
-    p_stale.add_argument('--days', type=int, default=30, help='Alter in Tagen (Default: 30)')
+    p_stale.add_argument('--days', type=int, default=30, help='Age in days (default: 30)')
 
     sub.add_parser('workdays', aliases=['workday', 'workstreams', 'workstream'])
 
@@ -1460,7 +1464,7 @@ if __name__ == '__main__':
     try:
         main()
     except BrokenPipeError:
-        # Downstream-Pipe (z.B. | head) geschlossen — sauber beenden statt Stacktrace.
+        # Downstream pipe (e.g. | head) closed: exit cleanly instead of a stacktrace.
         try:
             sys.stdout.close()
         except Exception:

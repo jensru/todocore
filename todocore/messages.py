@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""i18n message catalog for the Loki Todo CLI.
+"""i18n message catalog for the todocore CLI.
 
-Keys are canonical English slugs. Values are .format()-templates per language.
-The German ('de') values are the historically-shipped strings, byte-for-byte
-(emojis, umlauts, colons, em-dashes, format placeholders) — dev==prod for the
-daily driver depends on this. English ('en') values are clean equivalents.
+Keys are canonical English slugs. Values are .format() templates per language.
+English ('en') is the default; German ('de') is the translation set. Both must
+keep matching format placeholders.
 
 Use t(key, lang, **kwargs). Fallback chain: MESSAGES[lang][key] -> MESSAGES['en'][key].
 """
@@ -25,10 +24,6 @@ MESSAGES = {
         'done_webhook': "DONE-WEBHOOK: {url}",
         'done_webhook_warn': "DONE-WEBHOOK-WARN: {error}",
         'done_hook_invalid': "DONE-HOOK-WARN: invalid TODO_DONE_HOOK '{spec}' (expected module:func)",
-        # _builtin_crm_done
-        'crm_warn_notfound': "CRM-WARN: {crm_id} not found, no touch.",
-        'crm_skip': "CRM-SKIP: {crm_id} is {state}, unchanged.",
-        'crm_touched': "CRM: {id} → ball=them, follow-up {followup}",
         # cmd_cancel
         'children_freed': "  {n} children freed to top-level.",
         'cancelled': "CANCELLED: {id} — {name}",
@@ -86,10 +81,6 @@ MESSAGES = {
         'done_webhook': "DONE-WEBHOOK: {url}",
         'done_webhook_warn': "DONE-WEBHOOK-WARN: {error}",
         'done_hook_invalid': "DONE-HOOK-WARN: ungueltiges TODO_DONE_HOOK '{spec}' (erwartet modul:func)",
-        # _builtin_crm_done
-        'crm_warn_notfound': "CRM-WARN: {crm_id} nicht gefunden, kein Touch.",
-        'crm_skip': "CRM-SKIP: {crm_id} ist {state}, unverändert.",
-        'crm_touched': "CRM: {id} → ball=them, Follow-up {followup}",
         # cmd_cancel
         'children_freed': "  {n} Kinder auf Top-Level gelöst.",
         'cancelled': "CANCELLED: {id} — {name}",

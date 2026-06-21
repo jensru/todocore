@@ -9,11 +9,27 @@ description = "Generic CLI-first SQLite todo core (CLI + MCP + generic done-hook
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "jensru" }]
+authors = [{ name = "Jens Rusitschka" }]
 keywords = ["todo", "cli", "sqlite", "mcp", "productivity"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
 dependencies = [
     "pyyaml",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jensru/todocore"
+Repository = "https://github.com/jensru/todocore"
+Issues = "https://github.com/jensru/todocore/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.2"]

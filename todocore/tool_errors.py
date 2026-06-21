@@ -1,14 +1,14 @@
-"""Zentrales Error-Logging für Loki-CLIs.
+"""Central error logging for the todocore CLIs.
 
-Idee: Jede invalid-invocation (argparse-Fehler, unbehandelte Exception)
-landet in der Tabelle `tool_errors`. Daten treiben Alias-Entscheidungen
-datengetrieben — statt blind zu raten, was LLMs verwechseln.
+Idea: every invalid invocation (argparse error, unhandled exception) lands in
+the `tool_errors` table. The data drives alias decisions empirically instead of
+guessing what LLMs tend to confuse.
 
-Nutzung:
+Usage:
     from tool_errors import log_error, LoggingArgumentParser
 
-    parser = LoggingArgumentParser(description='...')  # statt argparse.ArgumentParser
-    # ... restlicher Code wie gehabt ...
+    parser = LoggingArgumentParser(description='...')  # instead of argparse.ArgumentParser
+    # ... rest of the code as usual ...
 
     try:
         cmds[args.command](args)
@@ -17,9 +17,10 @@ Nutzung:
                   error_type=type(e).__name__, error_msg=str(e))
         raise
 
-Quelle (source):
-- 'loki'  wenn CLAUDECODE=1 oder LOKI_AGENT=1 im Environment
-- 'human' sonst (best guess)
+Source label:
+- the value of TODO_AGENT, if set (lets a consumer name itself)
+- 'agent' when running under an agent (CLAUDECODE=1, a generic "under an agent" signal)
+- 'cli'   otherwise (a human at a shell)
 """
 
 import argparse
@@ -52,11 +53,15 @@ def _ensure_table(conn):
 
 
 def _detect_source():
+    # A consumer can name itself via TODO_AGENT. Otherwise we fall back to a
+    # generic "are we running under an agent?" signal (CLAUDECODE), and finally
+    # assume a human at a shell.
+    agent = os.environ.get('TODO_AGENT')
+    if agent:
+        return agent
     if os.environ.get('CLAUDECODE') == '1':
-        return 'loki'
-    if os.environ.get('LOKI_AGENT') == '1':
-        return 'loki'
-    return 'human'
+        return 'agent'
+    return 'cli'
 
 
 def log_error(tool, command=None, argv=None, error_type=None, error_msg=None, exit_code=None):
@@ -86,12 +91,12 @@ def log_error(tool, command=None, argv=None, error_type=None, error_msg=None, ex
 
 
 class LoggingArgumentParser(argparse.ArgumentParser):
-    """ArgumentParser, der bei `error()` in tool_errors loggt bevor er sys.exit aufruft.
+    """ArgumentParser that logs to tool_errors on `error()` before calling sys.exit.
 
-    Wird automatisch von Subparsern geerbt, wenn als Top-Level-Parser genutzt.
+    Inherited automatically by subparsers when used as the top-level parser.
     """
 
-    # Tool-Name wird per Attribut gesetzt (Default: script name ohne .py)
+    # Tool name is set via attribute (default: script name without .py).
     _tool_name = None
 
     def error(self, message):
