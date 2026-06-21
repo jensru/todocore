@@ -90,6 +90,20 @@ engine and adds its own workday configs, a dashboard, and a CRM done-hook wired
 through `TODO_DONE_HOOK`. todocore itself knows nothing about any of that, which is
 the point: bring your own consumer (a CLI alias, a web UI, an agent, a cron job).
 
+## About
+
+Built by Jens Rusitschka at [kick & boost](https://kickboost.io).
+
+I design AI workflows for product teams that actually hold up in real work.
+Masterclass, workshops, engagements. Part of the design community for 20 years,
+personal experiences with writing difficulties. I understood this topic before I
+even had to research it.
+
+- 🌐 [kickboost.io](https://kickboost.io)
+- 💼 [LinkedIn](https://www.linkedin.com/in/jensru)
+
+If todocore is useful to you, I'd love to hear about it.
+
 ## License
 
 MIT.
