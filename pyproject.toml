@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "todocore"
+version = "0.1.0"
+description = "Generic CLI-first SQLite todo core (CLI + MCP + generic done-hook)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "jensru" }]
+keywords = ["todo", "cli", "sqlite", "mcp", "productivity"]
+dependencies = [
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+dev = ["pytest", "build"]
+
+[project.scripts]
+todo = "todocore.todo:main"
+todocore = "todocore.todo:main"
+
+[tool.setuptools]
+packages = ["todocore"]
