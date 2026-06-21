@@ -82,9 +82,13 @@ to the DB directly.
 
 ## Consumers
 
-"Loki" is a consumer / personality-pack built on todocore: it adds workday
-configs, a dashboard, and a CRM done-hook via `TODO_DONE_HOOK`. todocore knows
-nothing about any of that.
+todocore is the engine; consumers build their UX and integrations on top of it.
+
+**Loki** is the author's own personal agent environment, a private
+personal-assistant setup (not part of this repo). It uses todocore as its todo
+engine and adds its own workday configs, a dashboard, and a CRM done-hook wired
+through `TODO_DONE_HOOK`. todocore itself knows nothing about any of that, which is
+the point: bring your own consumer (a CLI alias, a web UI, an agent, a cron job).
 
 ## License
 
