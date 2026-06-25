@@ -66,3 +66,53 @@ def test_done_event_noop_without_hook(tmp_path):
     r = _run(db, "done", "linked-task")
     assert r.returncode == 0, r.stderr
     assert "DONE" in r.stdout
+
+
+def test_update_parent_and_body_together(tmp_path):
+    """Regression: `update --parent X --body "..."` must re-parent AND set the
+    body in one call. A reported bug had the combination only detach (parent_id
+    cleared) instead of moving to X. Both field orders are checked."""
+    db = tmp_path / "parentbody.db"
+    for name in ("Parent A", "Parent B"):
+        assert _run(db, "add", name).returncode == 0
+    assert _run(db, "add", "Kind", "--parent", "parent-a").returncode == 0
+
+    # --parent before --body
+    r = _run(db, "update", "kind", "--parent", "parent-b", "--body", "neu")
+    assert r.returncode == 0, r.stderr
+    show = _run(db, "show", "kind")
+    assert "parent-b" in show.stdout, show.stdout   # moved, not detached
+    assert "parent-a" not in show.stdout, show.stdout
+    assert "neu" in show.stdout, show.stdout         # body applied
+
+    # reverse order: --body before --parent, move back to A
+    r = _run(db, "update", "kind", "--body", "neu2", "--parent", "parent-a")
+    assert r.returncode == 0, r.stderr
+    show = _run(db, "show", "kind")
+    assert "parent-a" in show.stdout, show.stdout
+    assert "neu2" in show.stdout, show.stdout
+
+    # detach + body together: parent cleared, body still set
+    r = _run(db, "update", "kind", "--parent", "", "--body", "weg")
+    assert r.returncode == 0, r.stderr
+    show = _run(db, "show", "kind")
+    assert "weg" in show.stdout, show.stdout
+    # no active parent line anymore
+    assert "Parent: parent" not in show.stdout, show.stdout
+
+
+def test_update_repeat_set_and_clear(tmp_path):
+    """Recurrence can be set and turned off again. `--repeat ""` clears it;
+    an invalid interval is rejected."""
+    db = tmp_path / "repeat.db"
+    assert _run(db, "add", "Toggle", "--repeat", "weekly").returncode == 0
+    assert "weekly" in _run(db, "show", "toggle").stdout
+
+    # turn off
+    r = _run(db, "update", "toggle", "--repeat", "")
+    assert r.returncode == 0, r.stderr
+    assert "weekly" not in _run(db, "show", "toggle").stdout
+
+    # garbage rejected
+    r = _run(db, "update", "toggle", "--repeat", "yearly")
+    assert r.returncode != 0
