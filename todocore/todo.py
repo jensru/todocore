@@ -883,7 +883,9 @@ def cmd_update(args):
         fields['context'] = args.ctx
     if args.name:
         fields['name'] = args.name
-    if args.repeat:
+    if args.repeat is not None:
+        # Empty value ("") clears recurrence (one-shot). The update parser allows
+        # '' in --repeat choices, so test is-not-None here instead of truthiness.
         fields['repeat'] = args.repeat
     if args.workstream is not None:
         if args.workstream == '':
@@ -1392,7 +1394,8 @@ def main():
     p_update.add_argument('--tag', '--cat', '--category', dest='tag')
     p_update.add_argument('--ctx')
     p_update.add_argument('--name')
-    p_update.add_argument('--repeat', choices=['daily', 'weekly', 'monthly'])
+    p_update.add_argument('--repeat', choices=['', 'daily', 'weekly', 'monthly'],
+                          help='Recurrence; empty ("") turns it off (one-shot).')
     p_update.add_argument('--workstream', '--ws', '--workday', dest='workstream')
     p_update.add_argument('--deadline-type', dest='deadline_type', choices=['hard', 'soft'])
     p_update.add_argument('--body', '--note', '--notes', '--desc', '--description', dest='body')

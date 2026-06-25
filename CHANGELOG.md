@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Recurrence can now be turned off via `update`.** `todo update <id> --repeat ""`
+  clears the repeat (one-shot again). The update parser now accepts `''` in
+  `--repeat` choices and `cmd_update` applies an empty value (was truthy-only, so
+  clearing was impossible). Setting still validates against daily/weekly/monthly;
+  garbage like `yearly` is rejected. `add` is unchanged (omit `--repeat` = one-shot).
+
 ## [0.1.0] - 2026-06-21
 
 First public release. todocore is a generic, CLI-first todo core extracted from a

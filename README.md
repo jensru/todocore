@@ -70,6 +70,25 @@ Link a todo to an external system with `--external-id X` (and optionally
 flags on `done` are passed through to the hook, which decides whether to use
 them.
 
+## Recurring todos
+
+A todo can repeat. Set an interval on `add` or `update`:
+
+```bash
+todo add "Weekly review" --repeat weekly --scheduled 2026-06-29
+todo update weekly-review --repeat daily   # change interval
+todo update weekly-review --repeat ""       # turn off (one-shot again)
+```
+
+Intervals are `daily` | `weekly` | `monthly`. The model is a treadmill, not a
+calendar/cron: when you `done` a recurring todo, the next instance is created
+automatically. Its date anchors on the original's `scheduled` (or `deadline`) and
+moves forward one period; a recurring todo with no date produces a dateless copy.
+Marking the same todo done twice does not duplicate the next instance.
+
+Note: recurrence is reachable via the CLI (and any UI that wraps it). The optional
+MCP server does not yet expose the `repeat` field.
+
 ## MCP server
 
 ```bash
